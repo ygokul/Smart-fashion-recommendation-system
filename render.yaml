@@ -3,7 +3,7 @@ services:
     name: smart-fashion-app
     env: python
     rootDir: backend
-    buildCommand: cd ../frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt && mkdir -p app/static && cp -r ../frontend/dist/* app/static/
+    buildCommand: cd ../frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt && mkdir -p static && cp -r ../frontend/dist/* static/
     startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: SECRET_KEY

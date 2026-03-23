@@ -868,8 +868,8 @@ app.add_middleware(
 )
 
 # Serve frontend static files
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-app.mount("/", StaticFiles(directory="app/static", html=True), name="frontend")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/", StaticFiles(directory="static", html=True), name="frontend")
 
 # ==================== STATIC FILES ====================
 @app.get("/images/{filename}")
