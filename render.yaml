@@ -1,9 +1,12 @@
 services:
-  # Single Web Service: Backend API + Frontend Static
+  # Monorepo: Backend serves API + Frontend static
   - type: web
     name: smart-fashion-app
-    env: docker  # Flexible for bash script
-    dockerfilePath: ./Dockerfile
+    env: python
+    rootDir: backend  # Root is backend (where main.py is)
+    buildCommand: cd ../frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt && mkdir -p static && cp -r ../frontend/dist/* ./static/ || true
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: requirements.txt
     envVars:
       - key: DB_HOST
         fromDatabase:
