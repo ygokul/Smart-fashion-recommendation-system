@@ -10,3 +10,8 @@ bcrypt>=4.0.0
 selenium>=4.39.0
 numpy
 mysql-connector-python
+aiofiles
+python-jose[cryptography]
+python-dotenv
+pydantic[email]
+PyJWT
