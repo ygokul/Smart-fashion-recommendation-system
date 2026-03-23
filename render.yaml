@@ -3,36 +3,10 @@ services:
     name: smart-fashion-app
     env: python
     rootDir: backend
-    buildCommand: cd ../frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt && mkdir -p app/static && cp -r ../frontend/dist/* app/static/
-    startCommand: PYTHONPATH=. uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    plan: requirements.txt
+    buildCommand: cd ../frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt && mkdir -p app/static && cp -r ../frontend/dist/* app/static/
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: DB_HOST
-        fromDatabase:
-          name: uai-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: uai-db
-          property: port
-      - key: DB_USER
-        fromDatabase:
-          name: uai-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: uai-db
-          property: password
-      - key: DB_NAME
-        fromDatabase:
-          name: uai-db
-          property: databaseName
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
         value: false
-
-databases:
-  - name: uai-db
-    databaseName: uai_chat_db
-    user: uai_user

@@ -1,4 +1,4 @@
-google-adk>=1.18.0
+google-adk[extensions]>=1.18.0
 fastapi[standard]>=0.128.0
 uvicorn>=0.34.0
 python-multipart>=0.0.20
