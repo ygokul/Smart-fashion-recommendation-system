@@ -1,0 +1,52 @@
+services:
+  # Backend: Python FastAPI service
+  - type: web
+    name: backend
+    env: python
+    rootDir: backend
+    buildCommand: uv sync --frozen
+    startCommand: uv run --frozen uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7  # Optimal for uv/FastAPI
+      - key: DB_HOST
+        fromDatabase:
+          name: uai-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: uai-db
+          property: port
+      - key: DB_USER
+        fromDatabase:
+          name: uai-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: uai-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: uai-db
+          property: databaseName
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: false
+
+  # Frontend: Static React site
+  - type: web
+    name: frontend
+    env: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    headers:
+      - path: /*
+        value:
+          X-Frame-Options: DENY
+
+databases:
+  - name: uai-db
+    databaseName: uai_chat_db
+    user: uai_user
+    plan: starter  # Free tier; upgrade for prod
