@@ -6,6 +6,9 @@ import LoginPage from './LoginPage'
 import ProfileSetupPage from './ProfileSetupPage'
 import ChatPage from './App'
 import './index.css'
+import { getApiBaseUrl } from './api'
+
+const API_URL = getApiBaseUrl()
 
 // Loading component
 const LoadingScreen = () => (
@@ -39,7 +42,7 @@ const ProtectedRoute = ({ children }) => {
 
       // Verify token with backend
       try {
-        const response = await fetch('http://127.0.0.1:8000/auth/verify', {
+        const response = await fetch(`${API_URL}/auth/verify`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -94,7 +97,7 @@ const ProfileProtectedRoute = ({ children }) => {
 
       try {
         // Check profile status
-        const response = await fetch('http://127.0.0.1:8000/profile/status', {
+        const response = await fetch(`${API_URL}/profile/status`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -150,7 +153,7 @@ function AppWrapper() {
       // Check profile status and redirect accordingly
       const checkAndRedirect = async () => {
         try {
-          const response = await fetch('http://127.0.0.1:8000/profile/status', {
+          const response = await fetch(`${API_URL}/profile/status`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'

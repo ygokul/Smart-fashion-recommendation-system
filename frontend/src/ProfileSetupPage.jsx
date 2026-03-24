@@ -18,8 +18,9 @@ import {
   BsPlayCircle
 } from "react-icons/bs";
 import "./ProfileSetupPage.css";
+import { getApiBaseUrl } from "./api";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = getApiBaseUrl();
 
 // YouTube embed component
 const YouTubeEmbed = ({ videoId, title, width = "100%", height = "400" }) => {

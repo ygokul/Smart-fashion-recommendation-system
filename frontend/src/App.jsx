@@ -14,9 +14,10 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import "./App.css";
+import { getApiBaseUrl } from "./api";
 
 // API Configuration
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = getApiBaseUrl();
 const API_URLS = {
   chatStream: `${BACKEND_URL}/chat/stream`,
   chatAuthenticatedStream: `${BACKEND_URL}/chat/authenticated/stream`,

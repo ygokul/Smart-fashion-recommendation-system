@@ -556,8 +556,9 @@ import {
   FiShield
 } from "react-icons/fi";
 import "./LoginPage.css";
+import { getApiBaseUrl } from "./api";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = getApiBaseUrl();
 
 export default function LoginPage() {
   const navigate = useNavigate();
