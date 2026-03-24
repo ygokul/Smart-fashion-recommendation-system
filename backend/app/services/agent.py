@@ -40,64 +40,7 @@ groq_model = LiteLlm(
 # =====================================================
 # DATABASE CONNECTION FOR PROFILE ACCESS
 # =====================================================
-import mysql.connector
-from mysql.connector import pooling
 
-# Database configuration
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'database': os.getenv('DB_NAME', 'uai_chat_db'),
-    'port': int(os.getenv('DB_PORT', 3306)),
-    'pool_name': 'profile_pool',
-    'pool_size': int(os.getenv('DB_POOL_SIZE', 5)),
-    'pool_reset_session': True,
-    'autocommit': False,
-    'charset': 'utf8mb4',
-    'use_unicode': True
-}
-
-# Initialize database pool
-connection_pool = None
-
-def init_database_pool():
-    """Initialize database connection pool"""
-    global connection_pool
-    try:
-        connection_pool = pooling.MySQLConnectionPool(**DB_CONFIG)
-        print(f"✅ Database connection pool created with {DB_CONFIG['pool_size']} connections")
-        return True
-    except Exception as e:
-        print(f"❌ Failed to create database connection pool: {e}")
-        return False
-
-@contextmanager
-def get_db_cursor():
-    """Get a database cursor with context manager"""
-    conn = None
-    cursor = None
-    try:
-        if connection_pool:
-            conn = connection_pool.get_connection()
-            cursor = conn.cursor(dictionary=True, buffered=True)
-            yield cursor
-            conn.commit()
-        else:
-            raise Exception("Database pool not available")
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        print(f"❌ Database error: {e}")
-        raise
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-# Initialize database pool
-init_database_pool()
 
 # =====================================================
 # EVENT-BASED PROMPT ENHANCEMENT (Updated with gender-specific events)
@@ -459,103 +402,61 @@ def generate_event_prompt(user_input: str, event_info: Dict[str, Any], gender: O
 # =====================================================
 # PROFILE HELPER FUNCTIONS (Updated with gender field)
 # =====================================================
+from ..data import get_user, get_user_profile
+
 async def get_user_profile(user_id: int) -> Optional[Dict[str, Any]]:
-    """Get user profile and user details from database for personalization"""
+    """Get user profile and user details from JSON data for personalization"""
     if not user_id:
         print(f"⚠️ No user_id provided for profile lookup")
         return None
-    
-    try:
-        with get_db_cursor() as cursor:
-            # Query the user details from users table
-            cursor.execute("""
-                SELECT 
-                    id, username, email, subscription_tier, created_at
-                FROM users 
-                WHERE id = %s
-            """, (user_id,))
-            
-            user_data = cursor.fetchone()
-            
-            if not user_data:
-                print(f"⚠️ No user found with ID {user_id}")
-                return None
-            
-            # Query the profile from user_profiles table (including gender)
-            cursor.execute("""
-                SELECT 
-                    gender, body_type, skin_tone, face_shape, hair_type,
-                    style_preferences, measurements, height, weight,
-                    bust, waist, hips, is_complete, completed_sections
-                FROM user_profiles 
-                WHERE user_id = %s
-            """, (user_id,))
-            
-            profile_data = cursor.fetchone()
-            
-            # Combine user data and profile data
-            combined_data = {
-                "user_info": {
-                    "user_id": user_data['id'],
-                    "username": user_data['username'],
-                    "email": user_data['email'],
-                    "subscription_tier": user_data['subscription_tier'],
-                    "created_at": str(user_data['created_at']) if user_data['created_at'] else None
-                }
-            }
-            
-            if profile_data:
-                # Parse JSON fields
-                if profile_data.get('style_preferences'):
-                    try:
-                        profile_data['style_preferences'] = json.loads(profile_data['style_preferences'])
-                    except:
-                        profile_data['style_preferences'] = []
-                else:
-                    profile_data['style_preferences'] = []
-                
-                if profile_data.get('measurements'):
-                    try:
-                        profile_data['measurements'] = json.loads(profile_data['measurements'])
-                    except:
-                        profile_data['measurements'] = {}
-                else:
-                    profile_data['measurements'] = {}
-                
-                # Add profile data to combined data
-                combined_data.update(profile_data)
-                combined_data['has_profile'] = True
-                
-                # Print complete profile info
-                gender_info = f"Gender: {profile_data.get('gender', 'Not specified')}, "
-                print(f"✅ Loaded complete profile for user {user_id}: {gender_info}Body={profile_data.get('body_type')}, Skin={profile_data.get('skin_tone')}")
-            else:
-                print(f"⚠️ No profile found for user {user_id}, but user exists")
-                combined_data['has_profile'] = False
-                # Add default profile structure with gender
-                combined_data.update({
-                    'gender': None,
-                    'body_type': None,
-                    'skin_tone': None,
-                    'face_shape': None,
-                    'hair_type': None,
-                    'style_preferences': [],
-                    'measurements': {},
-                    'height': None,
-                    'weight': None,
-                    'bust': None,
-                    'waist': None,
-                    'hips': None,
-                    'is_complete': False,
-                    'completed_sections': 0
-                })
-            
-            return combined_data
-                
-    except Exception as e:
-        print(f"❌ Error getting user profile for user {user_id}: {e}")
-        traceback.print_exc()
+
+    user = get_user(user_id)
+    if not user:
+        print(f"⚠️ No user found with ID {user_id}")
         return None
+
+    profile = get_user_profile(user_id)
+    
+    # Combine user data and profile data
+    combined_data = {
+        "user_info": {
+            "user_id": user['id'],
+            "username": user['username'],
+            "email": user['email'],
+            "subscription_tier": user.get('subscription_tier', 'free'),
+            "created_at": str(user.get('created_at')) if user.get('created_at') else None
+        }
+    }
+    
+    if profile:
+        combined_data.update(profile)
+        combined_data['has_profile'] = True
+        
+        # Print complete profile info
+        gender_info = f"Gender: {profile.get('gender', 'Not specified')}, "
+        print(f"✅ Loaded complete profile for user {user_id}: {gender_info}Body={profile.get('body_type')}, Skin={profile.get('skin_tone')}")
+    else:
+        print(f"⚠️ No profile found for user {user_id}, but user exists")
+        combined_data['has_profile'] = False
+        # Add default profile structure with gender
+        combined_data.update({
+            'gender': None,
+            'body_type': None,
+            'skin_tone': None,
+            'face_shape': None,
+            'hair_type': None,
+            'style_preferences': [],
+            'measurements': {},
+            'height': None,
+            'weight': None,
+            'bust': None,
+            'waist': None,
+            'hips': None,
+            'is_complete': False,
+            'completed_sections': 0
+        })
+    
+    return combined_data
 
 def enhance_prompt_with_profile(prompt: str, profile_data: Dict[str, Any]) -> str:
     """Enhance image generation prompt with user profile information including gender"""

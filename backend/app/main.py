@@ -22,8 +22,7 @@ from datetime import datetime, timedelta
 import bcrypt
 import jwt
 import secrets
-import mysql.connector
-from mysql.connector import pooling, Error as MySQLError
+from .data import *
 import uuid
 from dotenv import load_dotenv
 import asyncio
@@ -147,21 +146,6 @@ class TokenData(BaseModel):
     user_id: int
     username: str
 
-# ==================== DATABASE CONFIGURATION ====================
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'database': os.getenv('DB_NAME', 'uai_chat_db'),
-    'port': int(os.getenv('DB_PORT', 3306)),
-    'pool_name': 'uai_pool',
-    'pool_size': int(os.getenv('DB_POOL_SIZE', 10)),
-    'pool_reset_session': True,
-    'autocommit': False,
-    'charset': 'utf8mb4',
-    'use_unicode': True
-}
-
 # ==================== JWT CONFIGURATION ====================
 SECRET_KEY = os.getenv('SECRET_KEY', secrets.token_urlsafe(32))
 ALGORITHM = os.getenv('ALGORITHM', "HS256")
@@ -185,60 +169,7 @@ for directory in [GENERATED_IMAGES_DIR, STATIC_DIR, LOGS_DIR]:
 security = HTTPBearer(auto_error=False)
 
 # ==================== DATABASE POOL ====================
-connection_pool = None
 
-def init_database_pool():
-    """Initialize database connection pool"""
-    global connection_pool
-    try:
-        # Test connection first
-        test_conn = mysql.connector.connect(
-            host=DB_CONFIG['host'],
-            user=DB_CONFIG['user'],
-            password=DB_CONFIG['password'],
-            port=DB_CONFIG['port']
-        )
-        test_conn.close()
-        
-        # Create connection pool
-        connection_pool = pooling.MySQLConnectionPool(**DB_CONFIG)
-        logger.info(f"MySQL connection pool created successfully with {DB_CONFIG['pool_size']} connections")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to create MySQL connection pool: {e}")
-        return False
-
-@contextmanager
-def get_db_connection():
-    """Get a database connection from the pool with context manager"""
-    conn = None
-    try:
-        if connection_pool:
-            conn = connection_pool.get_connection()
-            yield conn
-        else:
-            raise HTTPException(status_code=500, detail="Database pool not available")
-    except MySQLError as e:
-        logger.error(f"Database connection error: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    finally:
-        if conn:
-            conn.close()
-
-@contextmanager
-def get_db_cursor(commit: bool = False):
-    """Get a database cursor with context manager"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor(dictionary=True, buffered=True)
-        try:
-            yield cursor
-            if commit:
-                conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            cursor.close()
 
 # ==================== PASSWORD UTILITIES ====================
 def hash_password(password: str) -> str:
@@ -313,25 +244,19 @@ async def get_current_user(
             )
         
         # Verify user exists and is active
-        with get_db_cursor() as cursor:
-            cursor.execute(
-                "SELECT id, username, email, is_active FROM users WHERE id = %s",
-                (token_data.user_id,)
+        user = get_user(token_data.user_id)
+        if not user or not user.get('is_active'):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or inactive",
+                headers={"WWW-Authenticate": "Bearer"},
             )
-            user = cursor.fetchone()
             
-            if not user or not user['is_active']:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User not found or inactive",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            
-            return {
-                "user_id": user['id'],
-                "username": user['username'],
-                "email": user['email']
-            }
+        return {
+            "user_id": user['id'],
+            "username": user['username'],
+            "email": user['email']
+        }
             
     except HTTPException:
         raise
@@ -556,124 +481,7 @@ def create_user_profile_table():
     except Exception as e:
         logger.error(f"Error creating user_profiles table: {e}")
 
-def save_user_profile_to_db(user_id: int, profile_data: ProfileData) -> Dict[str, Any]:
-    """Save or update user profile in database"""
-    try:
-        with get_db_cursor(commit=True) as cursor:
-            # Calculate completed sections
-            completed_sections = 0
-            
-            if profile_data.gender:
-                completed_sections += 1
-            if profile_data.body_type:
-                completed_sections += 1
-            if profile_data.skin_tone:
-                completed_sections += 1
-            if profile_data.face_shape:
-                completed_sections += 1
-            if profile_data.hair_type:
-                completed_sections += 1
-            if profile_data.style_preferences and len(profile_data.style_preferences) > 0:
-                completed_sections += 1
-            if any([profile_data.height, profile_data.weight, profile_data.bust, 
-                    profile_data.waist, profile_data.hips]):
-                completed_sections += 1
-            
-            is_complete = completed_sections >= 4
-            
-            # Prepare JSON data
-            style_prefs_json = json.dumps(profile_data.style_preferences) if profile_data.style_preferences else None
-            measurements_json = json.dumps(profile_data.measurements) if profile_data.measurements else None
-            
-            # Check if profile exists
-            cursor.execute(
-                "SELECT id FROM user_profiles WHERE user_id = %s",
-                (user_id,)
-            )
-            existing_profile = cursor.fetchone()
-            
-            if existing_profile:
-                # Update existing profile
-                update_query = """
-                    UPDATE user_profiles 
-                    SET gender = %s,
-                        body_type = %s,
-                        skin_tone = %s,
-                        face_shape = %s,
-                        hair_type = %s,
-                        style_preferences = %s,
-                        measurements = %s,
-                        height = %s,
-                        weight = %s,
-                        bust = %s,
-                        waist = %s,
-                        hips = %s,
-                        completed_sections = %s,
-                        is_complete = %s,
-                        updated_at = NOW()
-                    WHERE user_id = %s
-                """
-                
-                cursor.execute(update_query, (
-                    profile_data.gender,
-                    profile_data.body_type,
-                    profile_data.skin_tone,
-                    profile_data.face_shape,
-                    profile_data.hair_type,
-                    style_prefs_json,
-                    measurements_json,
-                    profile_data.height,
-                    profile_data.weight,
-                    profile_data.bust,
-                    profile_data.waist,
-                    profile_data.hips,
-                    completed_sections,
-                    is_complete,
-                    user_id
-                ))
-                profile_id = existing_profile['id']
-            else:
-                # Insert new profile
-                insert_query = """
-                    INSERT INTO user_profiles (
-                        user_id, gender, body_type, skin_tone, face_shape, hair_type,
-                        style_preferences, measurements, height, weight, bust,
-                        waist, hips, completed_sections, is_complete
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """
-                
-                cursor.execute(insert_query, (
-                    user_id,
-                    profile_data.gender,
-                    profile_data.body_type,
-                    profile_data.skin_tone,
-                    profile_data.face_shape,
-                    profile_data.hair_type,
-                    style_prefs_json,
-                    measurements_json,
-                    profile_data.height,
-                    profile_data.weight,
-                    profile_data.bust,
-                    profile_data.waist,
-                    profile_data.hips,
-                    completed_sections,
-                    is_complete
-                ))
-                profile_id = cursor.lastrowid
-            
-            return {
-                "profile_id": profile_id,
-                "completed_sections": completed_sections,
-                "is_complete": is_complete,
-                "message": "Profile saved successfully"
-            }
-            
-    except Exception as e:
-        logger.error(f"Error saving user profile: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Database error: {str(e)}"
-        )
+save_user_profile(user_id, profile_data.dict())
 
 def get_user_profile_from_db(user_id: int) -> Optional[Dict[str, Any]]:
     """Get user profile from database"""
