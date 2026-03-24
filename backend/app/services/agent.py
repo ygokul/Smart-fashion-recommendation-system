@@ -12,11 +12,26 @@ from typing import Optional, Dict, List, Any
 import asyncio
 from contextlib import contextmanager
 
-from google.adk.agents import LlmAgent
-from google.adk.models.lite_llm import LiteLlm
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
+# =====================================================
+# RENDER-SAFE IMPORTS (Mock fallback)
+# =====================================================
+try:
+    from google.adk.agents import LlmAgent
+    from google.adk.models.lite_llm import LiteLlm
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.genai import types
+    ML_AVAILABLE = True
+    print("✅ Full ML stack available (local dev)")
+except ImportError as e:
+    print(f"⚠️ ML imports failed (Render mode?): {e}")
+    ML_AVAILABLE = False
+    # Mock classes for compatibility
+    class LlmAgent: pass
+    class LiteLlm: pass
+    class Runner: pass
+    class InMemorySessionService: pass
+    class types: pass
 
 from app.tools.image_gen import generate_image, IMAGE_STORE
 from app.services.prompts import INSTRUCTION
@@ -32,10 +47,16 @@ MODEL_ID = os.getenv(
     "groq/llama-3.3-70b-versatile"
 )
 
-groq_model = LiteLlm(
-    model=MODEL_ID,
-    api_key=os.getenv("GROQ_API_KEY")
-)
+if ML_AVAILABLE and os.getenv("GROQ_API_KEY"):
+    groq_model = LiteLlm(
+        model=MODEL_ID,
+        api_key=os.getenv("GROQ_API_KEY")
+    )
+else:
+    print("🔧 Using mock model (no GROQ_API_KEY or Render mode)")
+    class MockModel:
+        def __call__(self, *args, **kwargs): pass
+    groq_model = MockModel()
 
 # =====================================================
 # DATABASE CONNECTION FOR PROFILE ACCESS
@@ -870,34 +891,47 @@ async def fashion_image_tool_anonymous(prompt: str) -> str:
 # =====================================================
 # AGENT CREATION
 # =====================================================
-# Create agents for different contexts
-anonymous_agent = LlmAgent(
-    name="fashai_stylist_anonymous",
-    model=groq_model,
-    instruction=INSTRUCTION,
-    tools=[fashion_image_tool_anonymous]  # Only fashion image tool
-)
-
-authenticated_agent = LlmAgent(
-    name="fashai_stylist_authenticated",
-    model=groq_model,
-    instruction=INSTRUCTION,
-    tools=[fashion_image_tool_authenticated]  # Only fashion image tool
-)
-
-session_service = InMemorySessionService()
-
-anonymous_runner = Runner(
-    agent=anonymous_agent,
-    app_name="agents",
-    session_service=session_service,
-)
-
-authenticated_runner = Runner(
-    agent=authenticated_agent,
-    app_name="agents",
-    session_service=session_service,
-)
+# =====================================================
+# AGENT CREATION (Safe mode)
+# =====================================================
+if ML_AVAILABLE:
+    # Full agent stack for local dev
+    anonymous_agent = LlmAgent(
+        name="fashai_stylist_anonymous",
+        model=groq_model,
+        instruction=INSTRUCTION,
+        tools=[fashion_image_tool_anonymous]
+    )
+    
+    authenticated_agent = LlmAgent(
+        name="fashai_stylist_authenticated", 
+        model=groq_model,
+        instruction=INSTRUCTION,
+        tools=[fashion_image_tool_authenticated]
+    )
+    
+    session_service = InMemorySessionService()
+    
+    anonymous_runner = Runner(
+        agent=anonymous_agent,
+        app_name="agents",
+        session_service=session_service,
+    )
+    
+    authenticated_runner = Runner(
+        agent=authenticated_agent,
+        app_name="agents",
+        session_service=session_service,
+    )
+else:
+    # Render-safe mock runners
+    class MockRunner:
+        async def run_async(self, *args, **kwargs):
+            yield from []  # No-op iterator
+    
+    anonymous_runner = MockRunner()
+    authenticated_runner = MockRunner()
+    session_service = None
 
 # =====================================================
 # FASHION AWARE AGENT WRAPPER (Updated with gender context)

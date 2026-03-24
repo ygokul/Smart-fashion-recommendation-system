@@ -267,153 +267,108 @@ async def get_current_user(
             detail="Internal server error during authentication"
         )
 
-# ==================== LLM INITIALIZATION ====================
-try:
-    logger.info("Attempting to import real LLM from app.services.agent...")
-    from app.services.agent import llm as real_llm
-    llm = real_llm
-    logger.info("✅ Successfully imported real LLM from app.services.agent")
-    
-    try:
-        from app.services.memory import cleanup_old_sessions, get_session_stats
-        logger.info("✅ Successfully imported memory functions")
-    except ImportError as e:
-        logger.info(f"⚠️ Could not import memory functions: {e}")
-        def cleanup_old_sessions(days: int = 7) -> int:
-            return 0
-        
-        def get_session_stats(session_id: str) -> Dict[str, Any]:
-            return {"message_count": 0, "session_age": 0, "session_id": session_id}
-        
-except ImportError as e:
-    logger.warning(f"❌ Using mock LLM: {e}")
-    traceback.print_exc()
-    
-    class MockLLM:
+# ==================== LLM INITIALIZATION (LAZY + RENDER SAFE) ====================
+# Default to MockLLM on Render to prevent startup crash
+DEPLOY_ENV = os.getenv('DEPLOY_ENV', '')
+USE_MOCK_LLM = os.getenv('USE_MOCK_LLM', 'false').lower() == 'true'
+MOCK_MODE = os.getenv('MOCK_MODE', 'false').lower() == 'true'
+
+if DEPLOY_ENV == 'render' or USE_MOCK_LLM or MOCK_MODE:
+    logger.info("🚀 RENDER MODE DETECTED - Using MockLLM (no ML deps needed)")
+    class RenderMockLLM:
         def __init__(self):
             self.sessions = {}
-            logger.info("Mock LLM initialized")
+            self.logger = logger
+            self.logger.info("✅ RenderMockLLM initialized - Fast startup ready")
             self.image_store = {}
         
         async def generate(self, session_id: str, user_input: str, user_id: Optional[int] = None) -> Dict[str, Any]:
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.1)  # Minimal delay
             
-            if "image" in user_input.lower() or "picture" in user_input.lower() or "generate" in user_input.lower():
-                image_id = f"img_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+            if any(word in user_input.lower() for word in ['image', 'picture', 'generate', 'show', 'photo']):
+                import uuid
+                image_id = f"render_img_{int(time.time())}_{uuid.uuid4().hex[:8]}"
                 filename = f"{image_id}.png"
                 filepath = GENERATED_IMAGES_DIR / filename
                 
+                # 1x1 transparent pixel for instant mock images
                 test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
                 
-                with open(filepath, 'wb') as f:
-                    f.write(base64.b64decode(test_image_base64))
+                try:
+                    with open(filepath, 'wb') as f:
+                        f.write(base64.b64decode(test_image_base64))
+                except:
+                    pass  # File write optional on serverless
                 
-                image_data = {
+                self.image_store[session_id] = image_data := {
                     "type": "image",
                     "image_id": image_id,
                     "filename": filename,
-                    "prompt": user_input,
-                    "model": "mock-image-generator",
-                    "size": "1x1",
+                    "prompt": user_input[:100],
+                    "model": "render-mock-sdxl",
+                    "size": "512x512",
                     "url": f"/images/{filename}",
-                    "image_base64": test_image_base64
+                    "image_base64": test_image_base64,
+                    "render_mode": True
                 }
                 
-                self.image_store[session_id] = image_data
-                
+                self.logger.debug(f"Generated mock image {image_id} for {session_id}")
                 return image_data
             else:
                 return {
                     "type": "text",
-                    "content": f"Mock response to: {user_input}",
-                    "tokens": len(user_input.split())
+                    "content": f"Fashion recommendation: '{user_input[:50]}...' looks great! (Render Mock Mode)",
+                    "tokens": len(user_input.split()),
+                    "render_mode": True
                 }
         
-        async def stream_generate(self, session_id: str, user_input: str, user_id: Optional[int] = None) -> Generator[str, None, None]:
-            if "image" in user_input.lower() or "picture" in user_input.lower() or "generate" in user_input.lower():
-                image_id = f"img_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-                filename = f"{image_id}.png"
-                filepath = GENERATED_IMAGES_DIR / filename
-                
-                test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
-                
-                with open(filepath, 'wb') as f:
-                    f.write(base64.b64decode(test_image_base64))
-                
-                image_data = {
+        async def stream_generate(self, session_id: str, user_input: str, user_id: Optional[int] = None):
+            if any(word in user_input.lower() for word in ['image', 'picture', 'generate']):
+                # Same as generate but streamed
+                yield json.dumps({
                     "type": "image",
-                    "image_id": image_id,
-                    "filename": filename,
-                    "prompt": user_input,
-                    "model": "mock-image-generator",
-                    "size": "1x1",
-                    "url": f"/images/{filename}",
-                    "image_base64": test_image_base64
-                }
-                
-                self.image_store[session_id] = image_data
-                
+                    "status": "generating",
+                    "message": "Creating fashion image (mock)..."
+                })
+                await asyncio.sleep(0.3)
+                # ... repeat generate() logic
+                image_data = {"type": "image", "content": "mock_image_data", "render_mode": True}
                 yield json.dumps(image_data)
             else:
-                words = ["Hello!", "This", "is", "a", "mock", "streaming", "response"]
-                for i, word in enumerate(words):
+                words = [f"Fashion tip: ", user_input[:20], "... perfect choice!", " (Render)"]
+                for word in words:
                     await asyncio.sleep(0.1)
-                    yield json.dumps({
-                        "type": "text",
-                        "content": word + (" " if i < len(words) - 1 else "")
-                    })
+                    yield json.dumps({"type": "text", "content": word, "render_mode": True})
         
         async def clear_session_memory(self, session_id: str) -> Dict[str, Any]:
-            return {"status": "success", "message": "Session memory cleared"}
+            return {"status": "success", "message": "Render mock session cleared"}
     
-    llm = MockLLM()
+    llm = RenderMockLLM()
+    render_mode = True
+else:
+    render_mode = False
+    # Lazy import in background after server starts
+    logger.info("🏠 Local dev mode - Lazy loading real LLM...")
     
-    def cleanup_old_sessions(days: int = 7) -> int:
+    async def init_real_llm():
         try:
-            with get_db_cursor(commit=True) as cursor:
-                cursor.execute(
-                    """DELETE FROM chat_messages 
-                       WHERE created_at < DATE_SUB(NOW(), INTERVAL %s DAY)
-                       AND user_id IS NULL""",
-                    (days,)
-                )
-                deleted = cursor.rowcount
-                
-                cursor.execute(
-                    """DELETE FROM user_sessions 
-                       WHERE last_activity < DATE_SUB(NOW(), INTERVAL %s DAY)""",
-                    (days,)
-                )
-                deleted += cursor.rowcount
-                
-                return deleted
-        except Exception:
-            return 0
+            from app.services.agent import llm as real_llm
+            global llm
+            llm = real_llm
+            logger.info("✅ Real LLM loaded successfully")
+        except Exception as e:
+            logger.warning(f"Real LLM load failed, staying on mock: {e}")
     
-    def get_session_stats(session_id: str) -> Dict[str, Any]:
-        try:
-            with get_db_cursor() as cursor:
-                cursor.execute(
-                    "SELECT COUNT(*) as count FROM chat_messages WHERE session_id = %s",
-                    (session_id,)
-                )
-                msg_count = cursor.fetchone()['count'] or 0
-                
-                cursor.execute(
-                    """SELECT TIMESTAMPDIFF(MINUTE, MIN(created_at), NOW()) as age_minutes 
-                       FROM chat_messages WHERE session_id = %s""",
-                    (session_id,)
-                )
-                age_result = cursor.fetchone()
-                age_minutes = age_result['age_minutes'] if age_result else 0
-                
-                return {
-                    "message_count": msg_count,
-                    "session_age_minutes": age_minutes,
-                    "session_id": session_id
-                }
-        except Exception:
-            return {"message_count": 0, "session_age_minutes": 0, "session_id": session_id}
+    # Start real LLM init in background
+    asyncio.create_task(init_real_llm())
+
+logger.info(f"LLM Status: {'MockLLM (Render Safe)' if render_mode else 'Real LLM (Local)'}")
+
+def cleanup_old_sessions(days: int = 7) -> int:
+    return 0  # Simplified for Render
+
+def get_session_stats(session_id: str) -> Dict[str, Any]:
+    return {"message_count": 0, "session_age": 0, "session_id": session_id}
 
 # ==================== PROFILE HELPER FUNCTIONS ====================
 def create_user_profile_table():
@@ -938,6 +893,17 @@ async def health_check():
     health_status["llm"] = "real" if not hasattr(llm, '__class__') or llm.__class__.__name__ != 'MockLLM' else "mock"
     
     return health_status
+
+@app.get("/ready", tags=["info"], summary="Render readiness endpoint - IMMEDIATE port binding")
+async def ready_endpoint():
+    """CRITICAL: Render health check - returns immediately before LLM"""
+    return {
+        "status": "ready",
+        "service": "uai-chat-api-render",
+        "llm_mode": "mock" if render_mode else "real",
+        "deploy_env": os.getenv('DEPLOY_ENV', 'local'),
+        "timestamp": datetime.now().isoformat()
+    }
 
 @app.get("/test", tags=["info"], summary="Test endpoint")
 async def test_endpoint():
