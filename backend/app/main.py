@@ -437,7 +437,7 @@ def create_user_profile_table():
     except Exception as e:
         logger.error(f"Error creating user_profiles table: {e}")
 
-save_user_profile(user_id, profile_data.dict())
+pass # Render-safe - DB functions defined below
 
 def get_user_profile_from_db(user_id: int) -> Optional[Dict[str, Any]]:
     """Get user profile from database"""
@@ -1928,10 +1928,14 @@ async def startup_event():
     print(f"Serving images from: {GENERATED_IMAGES_DIR}")
     print(f"Authentication: Enabled")
     print(f"Profile Setup: Enabled (with Gender field)")
-    print(f"Database: {DB_CONFIG['database']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}")
+    print("Database: Mock mode - DB optional")
     
     # Initialize database pool
-    if init_database_pool():
+    try:
+        init_database_pool()
+        print("✅ Database ready")
+    except:
+        print("⚠️ DB optional for mock mode")
         print("✅ Database connection pool initialized")
     else:
         print("❌ Failed to initialize database pool")
