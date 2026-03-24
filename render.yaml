@@ -4,7 +4,7 @@ services:
     env: python
     rootDir: backend
     buildCommand: pip install -r requirements-prod.txt && mkdir -p generated_images static && python -c "from app.data import load_all_data; load_all_data() || echo 'Data load optional'"
-    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python -m uvicorn app.main_render:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: SECRET_KEY
         generateValue: true
