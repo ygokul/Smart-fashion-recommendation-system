@@ -300,7 +300,18 @@ if DEPLOY_ENV == 'render' or USE_MOCK_LLM or MOCK_MODE:
                 except:
                     pass  # File write optional on serverless
                 
-                self.image_store[session_id] = image_data := {
+                image_data = {
+                    "type": "image",
+                    "image_id": image_id,
+                    "filename": filename,
+                    "prompt": user_input[:100],
+                    "model": "render-mock-sdxl",
+                    "size": "512x512",
+                    "url": f"/images/{filename}",
+                    "image_base64": test_image_base64,
+                    "render_mode": True
+                }
+                self.image_store[session_id] = image_data
                     "type": "image",
                     "image_id": image_id,
                     "filename": filename,
