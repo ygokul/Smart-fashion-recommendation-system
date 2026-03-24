@@ -8,9 +8,7 @@ pydantic[email]>=2.0.0
 python-dotenv>=1.0.0
 aiofiles>=23.0.0
 
-# Database (if used)
-sqlalchemy>=2.0.0
-aiosqlite>=0.19.0
+
 
 # Auth & Security
 passlib[bcrypt]>=1.7.4

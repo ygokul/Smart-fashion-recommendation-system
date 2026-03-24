@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 import bcrypt
 import jwt
 import secrets
-from .data import *
+
 import uuid
 from dotenv import load_dotenv
 import asyncio
